@@ -1,0 +1,72 @@
+# Laboratorio CIB-665 · CenfoPay (aplicación ficticia y deliberadamente vulnerable)
+#
+#   docker compose up -d --build            -> base de datos + aplicación (http://localhost:8000)
+#   docker compose run --rm zap             -> escaneo DAST baseline (reportes en ./reportes)
+#   docker compose --profile secretos up -d vault   -> HashiCorp Vault en modo desarrollo (semana 4)
+#
+# Todas las credenciales salen del archivo .env (copia .env.example) y son SOLO de laboratorio.
+name: cenfopay
+
+services:
+  db:
+    image: postgres:16-alpine            # semana 2: fija esta imagen por digest (@sha256:...)
+    environment:
+      POSTGRES_DB: cenfopay
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+      APP_DB_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
+      VAULT_ADMIN_PASSWORD: ${VAULT_ADMIN_PASSWORD:?Define VAULT_ADMIN_PASSWORD en .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./db/esquema.sql:/opt/cenfopay/esquema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cenfopay"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: ./app
+    image: cenfopay:local
+    environment:
+      DB_ENGINE: postgres
+      DB_HOST: db
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8000:8000"                      # semana 2: ¿por qué conviene publicar solo en 127.0.0.1?
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------- DAST
+  zap:
+    image: ${ZAP_IMAGE:-ghcr.io/zaproxy/zaproxy:stable}
+    profiles: ["dast"]
+    depends_on:
+      - app
+    volumes:
+      - ./reportes:/zap/wrk:rw
+      - ./security/zap:/zap/config:ro
+    command: >
+      zap-baseline.py -t http://app:8000 -m 2
+      -c /zap/config/reglas-baseline.tsv
+      -r zap-baseline.html -J zap-baseline.json -w zap-baseline.md -I
+
+  # ------------------------------------------------- Gestión de secretos
+  vault:
+    image: hashicorp/vault:2.1.2
+    profiles: ["secretos"]
+    command: server -dev -dev-listen-address=0.0.0.0:8200
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN:?Define VAULT_DEV_ROOT_TOKEN en .env}
+    ports:
+      - "127.0.0.1:8200:8200"
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  db-data:

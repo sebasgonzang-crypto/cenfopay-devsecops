@@ -1,0 +1,43 @@
+# Configuración de Gitleaks para CenfoPay (semana 4 · CIB-665)
+# Extiende las reglas por defecto con patrones propios de la organización.
+title = "Reglas de detección de secretos de CenfoPay"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "cenfopay-token-integracion"
+description = "Token de integración de CenfoPay (formato cfp_<entorno>_<valor>)"
+regex = '''cfp_(?:test|live|dev|prod|qa)_[A-Za-z0-9]{20,}'''
+keywords = ["cfp_"]
+
+[[rules]]
+id = "cenfopay-flask-secret-key"
+description = "SECRET_KEY de Flask embebida en código, Dockerfile o configuración"
+regex = '''(?i)SECRET_KEY\s*[=:]\s*["']?([A-Za-z0-9_\-]{16,})'''
+secretGroup = 1
+keywords = ["secret_key"]
+
+[[rules]]
+id = "cenfopay-password-literal"
+description = "Contraseña escrita como texto literal en el código"
+regex = '''(?i)(?:password|passwd|contrasena)\w*\s*(?:=|:\s)\s*["']([^"'\s${}]{8,})["']'''
+secretGroup = 1
+keywords = ["password", "passwd", "contrasena"]
+
+[[rules]]
+id = "cenfopay-password-variable-entorno"
+description = "Contraseña asignada en un .env, Dockerfile (ENV) o archivo de despliegue"
+regex = '''(?m)^\s*(?:ENV\s+)?[A-Z_]*(?:PASSWORD|PASSWD)[A-Z_]*\s*=\s*([^\s$"'{]{8,})'''
+secretGroup = 1
+keywords = ["password", "passwd"]
+
+# Excepciones globales: cada una debe estar justificada en
+# docs/umbrales-y-riesgo-residual.md (sección "Excepciones aprobadas").
+[[allowlists]]
+description = "Casos de prueba de reglas y valores de ejemplo de laboratorio"
+paths = [
+  '''security/semgrep/reglas-cenfopay\.py''',
+  '''\.env\.example''',
+  '''app/tests/.*''',
+]

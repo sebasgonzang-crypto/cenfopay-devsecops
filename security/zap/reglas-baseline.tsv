@@ -1,0 +1,18 @@
+# Reglas de OWASP ZAP baseline para CenfoPay (Módulo 1)
+# Formato: <id de regla><TAB><IGNORE|INFO|WARN|FAIL><TAB>(<nombre>)
+# IGNORE = ruido aceptado y justificado en docs/umbrales-y-riesgo-residual.md
+# FAIL   = el escáner termina con error (además del umbral de security_gate.py)
+# Lista completa de reglas: https://www.zaproxy.org/docs/alerts/
+10020	WARN	(Anti-clickjacking Header)
+10021	WARN	(X-Content-Type-Options Header Missing)
+10038	WARN	(Content Security Policy (CSP) Header Not Set)
+10036	WARN	(Server Leaks Version Information via Server HTTP Response Header Field)
+10010	WARN	(Cookie No HttpOnly Flag)
+10011	WARN	(Cookie Without Secure Flag)
+10054	WARN	(Cookie without SameSite Attribute)
+90022	FAIL	(Application Error Disclosure)
+10023	FAIL	(Information Disclosure - Debug Error Messages)
+10202	INFO	(Absence of Anti-CSRF Tokens)
+10027	IGNORE	(Information Disclosure - Suspicious Comments)
+10096	IGNORE	(Timestamp Disclosure - Unix)
+10049	IGNORE	(Storable and Cacheable Content)

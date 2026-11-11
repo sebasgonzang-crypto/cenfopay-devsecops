@@ -1,0 +1,37 @@
+{
+  // Entorno de trabajo del curso CIB-665 en GitHub Codespaces.
+  // Trae Python, git, GitHub CLI y Docker (Docker dentro del codespace), y al
+  // crearse instala Semgrep, Bandit, Trivy, Hadolint y Gitleaks con versión fija.
+  "name": "CenfoPay · CIB-665 DevSecOps",
+  // La imagen se arma con .devcontainer/Dockerfile (Python 3.12 sin el repositorio de Yarn vencido).
+  "build": { "dockerfile": "Dockerfile" },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+  "forwardPorts": [8000, 8200],
+  "portsAttributes": {
+    "8000": { "label": "CenfoPay", "onAutoForward": "notify" },
+    "8200": { "label": "Vault (laboratorio)", "onAutoForward": "silent" }
+  },
+  "postCreateCommand": "bash scripts/preparar-codespace.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "redhat.vscode-yaml",
+        "ms-python.python",
+        "ms-vscode.live-server"
+      ],
+      "settings": {
+        "files.eol": "\n",
+        "editor.insertSpaces": true,
+        "[yaml]": { "editor.tabSize": 2 }
+      }
+    }
+  }
+}

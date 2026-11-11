@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>CenfoPay · laboratorio CIB-665</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
+</head>
+<body>
+  <h1>CenfoPay</h1>
+  <p class="aviso">Aplicación <strong>ficticia y deliberadamente vulnerable</strong> del curso
+     CIB-665 Automatización y DevSecOps. Solo para uso en tu laboratorio local.</p>
+
+  <h2>Iniciar sesión</h2>
+  <form action="/api/login" method="post">
+    <label>Usuario <input name="usuario"></label>
+    <label>Contraseña <input name="password" type="password"></label>
+    <button type="submit">Entrar</button>
+  </form>
+
+  <h2>Saludo</h2>
+  <form action="/saludo" method="get">
+    <label>Nombre <input name="nombre"></label>
+    <button type="submit">Saludar</button>
+  </form>
+
+  <h2>Servicios de la API</h2>
+  <ul>
+    <li><a href="/salud">/salud</a></li>
+    <li><a href="/saludo?nombre=Ana">/saludo?nombre=Ana</a></li>
+    <li><a href="/api/cuentas/1/movimientos?desde=2026-01-01">/api/cuentas/1/movimientos</a></li>
+    <li><a href="/api/diagnostico/resolver?host=localhost">/api/diagnostico/resolver</a></li>
+    <li><a href="/api/reportes?archivo=resumen.txt">/api/reportes</a></li>
+  </ul>
+</body>
+</html>

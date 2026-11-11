@@ -1,0 +1,33 @@
+# Semana 4 · CenfoPay obtiene sus secretos de HashiCorp Vault (AppRole)
+#   bash scripts/vault-configurar.sh        (una vez, con Vault levantado)
+#   docker compose --profile secretos -f docker-compose.yml -f compose.endurecido.yml \
+#     -f compose.secretos.yml -f compose.vault.yml up -d
+#
+# La aplicación solo recibe role_id y secret_id (como archivos). Con ellos obtiene un
+# token de vida corta y, con él, la SECRET_KEY (KV v2) y la contraseña de PostgreSQL
+# que Vault rota. Ningún secreto de negocio vive en el .env ni en la imagen.
+services:
+  app:
+    environment: !override
+      DB_ENGINE: postgres
+      DB_HOST: db
+      SECRETS_PROVIDER: vault
+      VAULT_ADDR: http://vault:8200
+      APP_ENTORNO: dev
+      VAULT_DB_ROLE: cenfopay-app-estatico
+      VAULT_DB_ROLE_TYPE: static
+      VAULT_ROLE_ID_FILE: /run/secrets/vault_role_id
+      VAULT_SECRET_ID_FILE: /run/secrets/vault_secret_id
+      COOKIE_SEGURA: "false"
+    secrets: !override
+      - vault_role_id
+      - vault_secret_id
+    depends_on:
+      vault:
+        condition: service_healthy
+
+secrets:
+  vault_role_id:
+    file: ./.secrets/role_id
+  vault_secret_id:
+    file: ./.secrets/secret_id

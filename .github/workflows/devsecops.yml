@@ -1,0 +1,555 @@
+# =====================================================================
+# Pipeline DevSecOps de CenfoPay · CIB-665 Automatización y DevSecOps
+#
+# UN SOLO PIPELINE PARA TODO EL CURSO. No necesitas editar este archivo:
+# las etapas se encienden según la semana escrita en proyecto.yml.
+#
+#   semana 0  -> nada se revisa todavía (proyecto recién creado)
+#   semana 1  -> pruebas + SAST (Semgrep) + DAST (ZAP) + compuerta
+#   semana 2  -> + contenedor: Hadolint, Trivy, SBOM y verificación del endurecimiento
+#   semana 3  -> + reglas propias, Bandit, revisión de lo nuevo en PR, pruebas de seguridad
+#   semana 4  -> + Gitleaks en el historial, secretos del environment «laboratorio»
+#                y prueba canario de los registros
+#
+# Para avanzar de semana usa:  bash scripts/semana.sh <número>
+# Las acciones de terceros están fijadas por SHA de commit (no por etiqueta).
+# =====================================================================
+name: DevSecOps CenfoPay
+
+on:
+  push:
+    branches: [main]            # cada integración a la rama principal
+  pull_request:
+    branches: [main]            # cada propuesta de cambio, ANTES de integrarse
+  schedule:
+    - cron: "17 9 * * 1"        # lunes 03:17 (Costa Rica): fallas nuevas aunque el código no cambie
+  workflow_dispatch:            # botón «Run workflow» en la pestaña Actions
+    inputs:
+      modo:
+        description: "Modo de la compuerta (politica = usar security/politica-umbrales.yml)"
+        type: choice
+        options: [politica, auditar, bloquear]
+        default: politica
+
+permissions:
+  contents: read                # mínimo privilegio para el GITHUB_TOKEN
+
+concurrency:
+  group: devsecops-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SEMGREP_VERSION: "1.185.0"
+  BANDIT_VERSION: "1.9.4"
+
+jobs:
+  # -------------------------------------------------------------------
+  # Lee proyecto.yml y decide qué etapas corresponden a esta semana.
+  config:
+    name: Semana activa del proyecto
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      semana: ${{ steps.leer.outputs.semana }}
+      python: ${{ steps.leer.outputs.python }}
+    steps:
+      - name: Obtener el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Leer proyecto.yml
+        id: leer
+        run: |
+          semana="$(sed -n 's/^semana:[[:space:]]*\([0-4]\).*/\1/p' proyecto.yml | head -n 1)"
+          semana="${semana:-0}"
+          # Las librerías originales solo funcionan con Python 3.9; en la semana 3 se actualizan.
+          if [ "${semana}" -ge 3 ]; then python="3.13"; else python="3.9"; fi
+          echo "semana=${semana}" >> "$GITHUB_OUTPUT"
+          echo "python=${python}" >> "$GITHUB_OUTPUT"
+          echo "### Semana activa del proyecto: ${semana} (Python ${python})" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${semana}" -eq 0 ]; then
+            echo "::notice::Proyecto sin activar. En tu codespace ejecuta: bash scripts/semana.sh 1"
+          fi
+
+  # -------------------------------------------------------------------
+  pruebas:
+    name: Construcción y pruebas
+    runs-on: ubuntu-24.04
+    needs: config
+    if: fromJSON(needs.config.outputs.semana) >= 1
+    timeout-minutes: 10
+    steps:
+      - name: Obtener el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Preparar Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ needs.config.outputs.python }}
+
+      - name: Instalar dependencias
+        run: pip install -r app/requirements.txt -r app/requirements-dev.txt
+
+      - name: Pruebas funcionales
+        working-directory: app
+        run: pytest -m "not seguridad and not secretos" --junitxml=../reportes/pruebas-funcionales.xml
+
+      # Semana 3 en adelante: cada falla corregida tiene una prueba que la ataca.
+      # Si alguien la vuelve a introducir, esta etapa falla y la compuerta bloquea.
+      - name: Pruebas de regresión de seguridad
+        if: fromJSON(needs.config.outputs.semana) >= 3
+        working-directory: app
+        env:
+          MARCADOR: ${{ fromJSON(needs.config.outputs.semana) >= 4 && 'seguridad or secretos' || 'seguridad' }}
+        run: pytest -m "${MARCADOR}" --junitxml=../reportes/pruebas-seguridad.xml
+
+      - name: Publicar evidencia
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reporte-pruebas
+          path: reportes/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # -------------------------------------------------------------------
+  sast:
+    name: SAST · Semgrep (+ Bandit desde la semana 3)
+    runs-on: ubuntu-24.04
+    needs: config
+    if: fromJSON(needs.config.outputs.semana) >= 1
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write    # solo este job y el de contenedor publican en Security
+    steps:
+      - name: Obtener el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Instalar herramientas SAST (versiones fijas)
+        run: pip install "semgrep==${SEMGREP_VERSION}" "bandit==${BANDIT_VERSION}"
+
+      # Semana 3: las reglas propias también son código y se prueban antes de usarlas.
+      - name: Probar las reglas propias (semgrep --test)
+        if: fromJSON(needs.config.outputs.semana) >= 3
+        run: semgrep --test security/semgrep/
+
+      # El job NO falla por hallazgos: genera evidencia. La decisión es de la compuerta.
+      # Semana 3: se suman las reglas de CenfoPay y, en un PR, solo se reportan los
+      # hallazgos NUEVOS frente a main (la deuda heredada no bloquea a quien no la creó).
+      - name: Analizar el código fuente (Semgrep)
+        env:
+          SEMANA: ${{ needs.config.outputs.semana }}
+          EVENTO: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p reportes
+          reglas=(--config p/python --config p/flask)
+          diferencial=()
+          if [ "${SEMANA}" -ge 3 ]; then
+            reglas+=(--config security/semgrep/reglas-cenfopay.yml)
+            if [ "${EVENTO}" = "pull_request" ]; then diferencial=(--baseline-commit "${BASE_SHA}"); fi
+          fi
+          semgrep scan "${diferencial[@]}" "${reglas[@]}" \
+            --metrics=off \
+            --json-output=reportes/semgrep.json \
+            --sarif-output=reportes/semgrep.sarif \
+            app/
+
+      - name: Analizar el código fuente (Bandit, segundo revisor)
+        if: fromJSON(needs.config.outputs.semana) >= 3
+        run: bandit -r app -x app/tests -f json -o reportes/bandit.json --exit-zero
+
+      - name: Publicar en GitHub Code Scanning
+        if: always()
+        continue-on-error: true   # repositorios privados sin GitHub Advanced Security
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: reportes/semgrep.sarif
+          category: semgrep
+
+      - name: Publicar evidencia
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reporte-sast
+          path: reportes/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # -------------------------------------------------------------------
+  contenedor:
+    name: Contenedor · Hadolint + Trivy + SBOM
+    runs-on: ubuntu-24.04
+    needs: config
+    if: fromJSON(needs.config.outputs.semana) >= 2
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Obtener el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Binarios con versión Y huella SHA-256 fijas (lección del incidente de Trivy, marzo 2026).
+      - name: Instalar Trivy y Hadolint verificados
+        run: bash scripts/instalar-herramientas.sh trivy hadolint
+
+      - name: Analizar el Dockerfile (Hadolint)
+        run: |
+          mkdir -p reportes
+          hadolint --config security/hadolint.yaml --no-fail -f json  app/Dockerfile > reportes/hadolint.json
+          hadolint --config security/hadolint.yaml --no-fail -f sarif app/Dockerfile > reportes/hadolint.sarif
+
+      - name: Construir la imagen
+        run: docker build -t cenfopay:ci app/
+
+      - name: Inventario de componentes (SBOM CycloneDX)
+        run: trivy image --format cyclonedx --output reportes/sbom-cyclonedx.json cenfopay:ci
+
+      # Clasificación por origen: sistema operativo (lo resuelve la imagen base)
+      # vs. librerías de la aplicación (las resuelve desarrollo).
+      - name: Vulnerabilidades del sistema operativo de la imagen
+        run: trivy image --pkg-types os --scanners vuln --format json --output reportes/trivy-so.json cenfopay:ci
+
+      - name: Vulnerabilidades de las librerías y secretos en capas
+        run: trivy image --pkg-types library --scanners vuln,secret --format json --output reportes/trivy-dependencias.json cenfopay:ci
+
+      - name: Configuración insegura del Dockerfile (Trivy misconfig)
+        run: trivy config --format json --output reportes/trivy-config.json app/
+
+      - name: Versiones legibles y SARIF
+        if: always()
+        run: |
+          for r in so dependencias config; do
+            trivy convert --format table --output "reportes/trivy-${r}.txt" "reportes/trivy-${r}.json" || true
+          done
+          trivy convert --format sarif --output reportes/trivy.sarif reportes/trivy-dependencias.json || true
+
+      - name: Publicar en GitHub Code Scanning
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: reportes/trivy.sarif
+          category: trivy
+
+      - name: Publicar evidencia
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reporte-contenedor
+          path: reportes/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # -------------------------------------------------------------------
+  # DAST de las semanas 1 a 3: credenciales de prueba del archivo .env.example.
+  dast:
+    name: DAST · OWASP ZAP baseline
+    runs-on: ubuntu-24.04
+    needs: [config, pruebas]    # no tiene sentido atacar una app que no pasa sus pruebas
+    if: fromJSON(needs.config.outputs.semana) >= 1 && fromJSON(needs.config.outputs.semana) < 4
+    timeout-minutes: 25
+    env:
+      SEMANA: ${{ needs.config.outputs.semana }}
+      # Semana 1: compose base · semanas 2-3: + controles de mínimo privilegio
+      COMPOSE_ARCHIVOS: ${{ fromJSON(needs.config.outputs.semana) >= 2 && '-f docker-compose.yml -f compose.endurecido.yml' || '-f docker-compose.yml' }}
+    steps:
+      - name: Obtener el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configuración de laboratorio (credenciales de prueba)
+        run: cp .env.example .env
+
+      - name: Levantar CenfoPay (base de datos + aplicación)
+        run: |
+          read -ra archivos <<< "${COMPOSE_ARCHIVOS}"
+          docker compose "${archivos[@]}" up -d --build db app
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/salud && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/salud
+
+      # Comprobar sobre el contenedor REAL, no sobre lo que creemos haber configurado.
+      - name: Verificación post-endurecimiento
+        if: env.SEMANA >= 2
+        run: bash scripts/verificar-endurecimiento.sh cenfopay:local cenfopay-app-1
+
+      - name: Escaneo dinámico (ZAP baseline)
+        run: |
+          mkdir -p reportes && chmod 777 reportes
+          read -ra archivos <<< "${COMPOSE_ARCHIVOS}"
+          set +e
+          docker compose "${archivos[@]}" --profile dast run --rm zap
+          codigo=$?
+          set -e
+          echo "ZAP terminó con código ${codigo} (0=ok, 1=FAIL, 2=WARN, 3=error)"
+          if [ "${codigo}" -ge 3 ]; then exit "${codigo}"; fi
+
+      - name: Guardar registros de la aplicación
+        if: always()
+        run: |
+          read -ra archivos <<< "${COMPOSE_ARCHIVOS}"
+          docker compose "${archivos[@]}" logs app > reportes/app.log 2>&1 || true
+
+      - name: Publicar evidencia
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reporte-dast
+          path: reportes/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Apagar el laboratorio
+        if: always()
+        run: |
+          read -ra archivos <<< "${COMPOSE_ARCHIVOS}"
+          docker compose "${archivos[@]}" down -v || true
+
+  # -------------------------------------------------------------------
+  # DAST de la semana 4: los secretos vienen del GitHub Environment «laboratorio»
+  # (Settings > Environments). Solo este job los recibe.
+  dast-secretos:
+    name: DAST · OWASP ZAP baseline (secretos del environment)
+    runs-on: ubuntu-24.04
+    needs: [config, pruebas]
+    if: fromJSON(needs.config.outputs.semana) >= 4
+    timeout-minutes: 25
+    environment: laboratorio
+    env:
+      SEMANA: ${{ needs.config.outputs.semana }}
+      COMPOSE_ARCHIVOS: -f docker-compose.yml -f compose.endurecido.yml -f compose.secretos.yml
+    steps:
+      - name: Obtener el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Inyectar los secretos del environment «laboratorio»
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          VAULT_ADMIN_PASSWORD: ${{ secrets.VAULT_ADMIN_PASSWORD }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        run: |
+          for variable in POSTGRES_PASSWORD DB_PASSWORD VAULT_ADMIN_PASSWORD SECRET_KEY; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::Falta el secreto ${variable} en el environment 'laboratorio' (Settings > Environments)"; exit 1
+            fi
+          done
+          umask 077                      # el archivo solo lo lee el usuario del runner
+          {
+            echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
+            echo "DB_PASSWORD=${DB_PASSWORD}"
+            echo "VAULT_ADMIN_PASSWORD=${VAULT_ADMIN_PASSWORD}"
+            echo "SECRET_KEY=${SECRET_KEY}"
+            echo "VAULT_DEV_ROOT_TOKEN=no-se-usa-en-ci"
+            echo "ZAP_IMAGE=ghcr.io/zaproxy/zaproxy:stable"
+          } > .env
+
+      # Valor único por corrida, oculto en los registros de Actions. Si aparece en
+      # los registros de la aplicación, hay una fuga de contraseñas (CWE-532).
+      - name: Generar contraseña canario
+        run: |
+          canario="Canario-$(openssl rand -hex 12)"
+          echo "::add-mask::${canario}"
+          echo "CANARIO=${canario}" >> "$GITHUB_ENV"
+
+      - name: Levantar CenfoPay (base de datos + aplicación)
+        run: |
+          read -ra archivos <<< "${COMPOSE_ARCHIVOS}"
+          docker compose "${archivos[@]}" up -d --build db app
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/salud && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/salud
+
+      # Comprobar sobre el contenedor REAL, no sobre lo que creemos haber configurado.
+      - name: Verificación post-endurecimiento
+        if: env.SEMANA >= 2
+        run: bash scripts/verificar-endurecimiento.sh cenfopay:local cenfopay-app-1
+
+      - name: Ejercitar el login con la contraseña canario
+        run: |
+          curl -s -o /dev/null -X POST -H "Content-Type: application/json" \
+            -d "{\"usuario\":\"canario\",\"password\":\"${CANARIO}\"}" \
+            http://127.0.0.1:8000/api/login || true
+
+      - name: Escaneo dinámico (ZAP baseline)
+        run: |
+          mkdir -p reportes && chmod 777 reportes
+          read -ra archivos <<< "${COMPOSE_ARCHIVOS}"
+          set +e
+          docker compose "${archivos[@]}" --profile dast run --rm zap
+          codigo=$?
+          set -e
+          echo "ZAP terminó con código ${codigo} (0=ok, 1=FAIL, 2=WARN, 3=error)"
+          if [ "${codigo}" -ge 3 ]; then exit "${codigo}"; fi
+
+      - name: Guardar registros de la aplicación
+        if: always()
+        run: |
+          read -ra archivos <<< "${COMPOSE_ARCHIVOS}"
+          docker compose "${archivos[@]}" logs app > reportes/app.log 2>&1 || true
+
+      - name: ¿Los registros filtran contraseñas? (prueba canario)
+        if: always()
+        run: |
+          if grep -qF "${CANARIO}" reportes/app.log; then
+            resultado=FALLA; detalle="la contraseña canario aparece en app.log"
+          else
+            resultado=PASA; detalle="la contraseña canario no aparece en app.log"
+          fi
+          printf '[{"id":"LOG-01","control":"Los registros no contienen contraseñas","resultado":"%s","severidad":"ALTA","detalle":"%s"}]\n' \
+            "${resultado}" "${detalle}" > reportes/registros.json
+          echo "LOG-01: ${resultado} (${detalle})"
+
+      - name: Publicar evidencia
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reporte-dast
+          path: reportes/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Apagar el laboratorio
+        if: always()
+        run: |
+          read -ra archivos <<< "${COMPOSE_ARCHIVOS}"
+          docker compose "${archivos[@]}" down -v || true
+          rm -f .env
+
+  # -------------------------------------------------------------------
+  secretos:
+    name: Secretos · Gitleaks (historial completo)
+    runs-on: ubuntu-24.04
+    needs: config
+    if: fromJSON(needs.config.outputs.semana) >= 4
+    timeout-minutes: 10
+    steps:
+      - name: Obtener el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Instalar Gitleaks verificado
+        run: bash scripts/instalar-herramientas.sh gitleaks
+
+      # Borrar un archivo NO borra el secreto: sigue en el historial de git.
+      # En un PR se revisan solo los commits nuevos; en main y cada semana, TODO el historial.
+      - name: Buscar secretos en el historial de git
+        env:
+          EVENTO: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mkdir -p reportes
+          rango=()
+          if [ "${EVENTO}" = "pull_request" ]; then rango=(--log-opts="${BASE_SHA}..${HEAD_SHA}"); fi
+          gitleaks git "${rango[@]}" --config security/gitleaks.toml --redact --exit-code 0 \
+            --report-format json --report-path reportes/gitleaks.json
+          gitleaks git "${rango[@]}" --config security/gitleaks.toml --redact --exit-code 0 \
+            --report-format sarif --report-path reportes/gitleaks.sarif
+
+      - name: Publicar evidencia
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reporte-secretos
+          path: reportes/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # -------------------------------------------------------------------
+  # Un solo punto de decisión: separa DETECTAR (jobs anteriores) de DECIDIR.
+  # Configura este job como «required status check» en la protección de main.
+  compuerta:
+    name: Compuerta de seguridad
+    runs-on: ubuntu-24.04
+    needs: [config, pruebas, sast, contenedor, dast, dast-secretos, secretos]
+    if: always()                # se evalúa aunque algún escaneo haya fallado
+    timeout-minutes: 5
+    steps:
+      - name: Obtener el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ¿Llegó la evidencia que corresponde a esta semana?
+        id: verificar
+        env:
+          SEMANA: ${{ needs.config.outputs.semana }}
+          RESULTADOS: ${{ toJSON(needs) }}
+        run: |
+          if [ -z "${SEMANA}" ]; then
+            echo "::error::No se pudo leer la semana del proyecto (revisa proyecto.yml)."; exit 1
+          fi
+          if [ "${SEMANA}" -eq 0 ]; then
+            echo "::notice::Proyecto sin activar (semana 0): no hay nada que evaluar todavía."
+            echo "activo=no" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          esperados="pruebas sast"
+          if [ "${SEMANA}" -ge 2 ]; then esperados="${esperados} contenedor"; fi
+          if [ "${SEMANA}" -ge 4 ]; then esperados="${esperados} dast-secretos secretos"; else esperados="${esperados} dast"; fi
+          faltan=0
+          for etapa in ${esperados}; do
+            resultado="$(echo "${RESULTADOS}" | jq -r --arg e "${etapa}" '.[$e].result')"
+            echo "${etapa}: ${resultado}"
+            if [ "${resultado}" != "success" ]; then faltan=1; fi
+          done
+          if [ "${faltan}" -ne 0 ]; then
+            echo "::error::Al menos una etapa de la semana ${SEMANA} no terminó bien: sin evidencia completa no se aprueba."
+            exit 1
+          fi
+          echo "activo=si" >> "$GITHUB_OUTPUT"
+
+      - name: Reunir los reportes de todas las etapas
+        if: steps.verificar.outputs.activo == 'si'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: reporte-*
+          path: reportes
+          merge-multiple: true
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: steps.verificar.outputs.activo == 'si'
+        with:
+          python-version: "3.13"
+
+      - name: Evaluar la política de umbrales
+        if: steps.verificar.outputs.activo == 'si'
+        env:
+          MODO: ${{ github.event.inputs.modo || 'politica' }}
+        run: |
+          pip install pyyaml
+          argumentos=(--reportes reportes --politica security/politica-umbrales.yml --csv reportes/hallazgos-normalizados.csv)
+          if [ "${MODO}" != "politica" ]; then argumentos+=(--modo "${MODO}"); fi
+          python tools/security_gate.py "${argumentos[@]}"
+
+      - name: Publicar evidencia
+        if: always() && steps.verificar.outputs.activo == 'si'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: evidencia-seguridad-${{ github.run_number }}
+          path: reportes/
+          retention-days: 90
