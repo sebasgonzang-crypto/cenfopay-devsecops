@@ -9,4 +9,4 @@
 #   4 = + Gitleaks, contraseñas del environment y prueba canario
 #
 # No lo cambies a mano: usa  bash scripts/semana.sh <número>
-semana: 0
+semana: 1
