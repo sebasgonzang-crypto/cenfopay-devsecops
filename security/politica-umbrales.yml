@@ -17,16 +17,16 @@
 #   bash scripts/tolerancia.sh <ERROR de semgrep> <Medium de zap>  (semana 1)
 #   bash scripts/semana.sh <número>                                 (semanas 2 a 4)
 version: 1
-modo: auditar            # semana 1: empieza en auditar; tolerancia.sh lo cambia a "bloquear"
+modo: bloquear           # cambiado por scripts (ver historial de git)
 
 herramientas:
   semgrep:               # SAST · gravedades: ERROR, WARNING, INFO
     umbrales:
-      ERROR: 0           # semana 1: aquí va tu número de ERROR (límite de tolerancia) · semana 3: 0
+      ERROR: 5           # límite de tolerancia: hallazgos ERROR de hoy
   zap:                   # DAST · riesgos: High, Medium, Low, Informational
     umbrales:
       High: 0
-      Medium: 10         # semana 1: aquí va tu número de Medium
+      Medium: 3         # límite de tolerancia: alertas Medium de hoy
   # --- Se activan en las semanas siguientes con: bash scripts/semana.sh <número> ---
   # hadolint:            # semana 2 · niveles: error, warning, info, style
   #   umbrales:
