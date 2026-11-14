@@ -107,4 +107,11 @@ def create_app(config_extra=None):
         except OSError:
             return jsonify(error="reporte no encontrado"), 404
 
+    @app.get("/api/diagnostico/ping")
+    def ping():
+        destino = request.args.get("destino", "localhost")
+        # Página insegura agregada A PROPÓSITO para probar la compuerta (no la fusiones)
+        salida = subprocess.check_output(f"ping -c 1 {destino}", shell=True, text=True)
+        return jsonify(resultado=salida)
+
     return app
