@@ -1,0 +1,19 @@
+# Secretos y configuración local: NUNCA al repositorio
+.env
+.secrets/
+*.pem
+*.key
+
+# Reportes generados (se publican como artefactos del pipeline)
+reportes/*
+!reportes/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Herramientas descargadas por scripts/instalar-herramientas.sh
+.herramientas/

@@ -1,0 +1,12 @@
+# Solo entra a la imagen lo que la aplicación necesita para ejecutarse.
+**/__pycache__
+**/*.pyc
+.pytest_cache/
+tests/
+requirements-dev.txt
+pytest.ini
+.env
+.env.*
+*.md
+Dockerfile
+.dockerignore

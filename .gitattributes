@@ -1,0 +1,4 @@
+# Evita que Windows convierta los finales de línea de los scripts (rompería bash/sh)
+*.sh  text eol=lf
+*.yml text eol=lf
+*.py  text eol=lf

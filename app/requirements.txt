@@ -1,0 +1,13 @@
+# Dependencias de CenfoPay — LÍNEA BASE VULNERABLE (versiones antiguas a propósito).
+# En el Módulo 2 se inventarían y clasifican sus CVE; en el Módulo 3 se actualizan.
+Flask==2.0.3
+Werkzeug==2.0.3
+Jinja2==3.0.3
+MarkupSafe==2.0.1
+itsdangerous==2.0.1
+click==8.0.4
+PyYAML==5.3.1
+psycopg2-binary==2.9.3
+requests==2.25.1
+urllib3==1.26.4
+gunicorn==20.0.4

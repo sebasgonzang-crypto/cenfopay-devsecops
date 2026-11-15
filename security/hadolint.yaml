@@ -1,0 +1,21 @@
+# Configuración de Hadolint para CenfoPay (Módulo 2)
+# Severidades: error > warning > info > style. La compuerta bloquea con "error".
+failure-threshold: error
+
+# Elevamos a "error" las reglas que, en este curso, consideramos inaceptables.
+override:
+  error:
+    - DL3002   # el último USER no debe ser root
+    - DL3007   # no usar la etiqueta "latest"
+    - DL3020   # COPY en lugar de ADD
+    - DL3025   # CMD/ENTRYPOINT en formato JSON (manejo correcto de señales)
+    - DL3026   # solo registros de imágenes confiables
+  warning:
+    - DL3008   # fijar versiones de paquetes apt
+    - DL3042   # pip con --no-cache-dir
+    - DL3064   # datos sensibles en ARG/ENV
+
+# Registros de imágenes en los que confiamos (DL3026).
+trustedRegistries:
+  - docker.io
+  - ghcr.io

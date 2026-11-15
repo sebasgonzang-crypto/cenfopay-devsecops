@@ -1,0 +1,24 @@
+# Semana 2 · Endurecimiento en tiempo de ejecución (se SUMA a docker-compose.yml)
+#   docker compose -f docker-compose.yml -f compose.endurecido.yml up -d --build
+# Requiere Docker Compose 2.24 o superior (etiqueta !override).
+services:
+  app:
+    user: "10001:10001"                 # nunca root, aunque la imagen lo olvide
+    read_only: true                     # sistema de archivos raíz inmutable
+    tmpfs:
+      - /tmp:size=16m,mode=1777         # única ruta escribible, en memoria
+    cap_drop: [ALL]                     # sin capacidades Linux (no las necesita)
+    security_opt:
+      - no-new-privileges:true          # bloquea escalamiento con setuid/setgid
+    pids_limit: 100                     # mitiga fork bombs
+    mem_limit: 256m                     # mitiga agotamiento de memoria
+    cpus: 0.5
+    ports: !override
+      - "127.0.0.1:8000:8000"           # solo accesible desde el propio equipo
+    restart: unless-stopped
+
+  db:
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    mem_limit: 512m

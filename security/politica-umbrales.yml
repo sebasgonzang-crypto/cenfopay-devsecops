@@ -1,0 +1,67 @@
+# Política de umbrales de bloqueo · CenfoPay · CIB-665
+#
+# Cada umbral es el NÚMERO MÁXIMO de hallazgos ABIERTOS permitidos de esa
+# gravedad (en la escala propia de cada herramienta). Si se supera y el modo
+# es "bloquear", la compuerta detiene el cambio. Las gravedades que no
+# aparecen no detienen nada.
+#
+#   modo: auditar   -> solo avisa, nunca detiene (para empezar a medir)
+#   modo: bloquear  -> detiene el cambio si se supera cualquier umbral
+#
+# Explica cada número y cada excepción en docs/umbrales-y-riesgo-residual.md
+#   Límite de tolerancia (semana 1): el umbral es la cantidad ACTUAL de
+#   hallazgos y solo puede bajar. Nada nuevo puede entrar aunque las fallas
+#   heredadas sigan ahí. En la semana 3, al corregir el código, baja a 0.
+#
+# No hace falta editar este archivo a mano: estos comandos lo actualizan por ti
+#   bash scripts/tolerancia.sh <ERROR de semgrep> <Medium de zap>  (semana 1)
+#   bash scripts/semana.sh <número>                                 (semanas 2 a 4)
+version: 1
+modo: auditar            # semana 1: empieza en auditar; tolerancia.sh lo cambia a "bloquear"
+
+herramientas:
+  semgrep:               # SAST · gravedades: ERROR, WARNING, INFO
+    umbrales:
+      ERROR: 0           # semana 1: aquí va tu número de ERROR (límite de tolerancia) · semana 3: 0
+  zap:                   # DAST · riesgos: High, Medium, Low, Informational
+    umbrales:
+      High: 0
+      Medium: 10         # semana 1: aquí va tu número de Medium
+  # --- Se activan en las semanas siguientes con: bash scripts/semana.sh <número> ---
+  # hadolint:            # semana 2 · niveles: error, warning, info, style
+  #   umbrales:
+  #     error: 0
+  # trivy-config:        # semana 2 · configuración insegura del Dockerfile
+  #   umbrales:
+  #     CRITICAL: 0
+  #     HIGH: 0
+  # trivy-so:            # semana 2 · piezas del sistema operativo de la imagen
+  #   solo_con_correccion: true   # las fallas sin arreglo quedan como riesgo residual
+  #   umbrales:
+  #     CRITICAL: 0
+  #     HIGH: 0
+  # trivy-dependencias:  # semana 2 = solo reporta · semana 3 = detiene
+  #   solo_con_correccion: true
+  #   umbrales: {}
+  # endurecimiento:      # semana 2 · scripts/verificar-endurecimiento.sh
+  #   umbrales:
+  #     ALTA: 0
+  # bandit:              # semana 3 · HIGH, MEDIUM, LOW
+  #   umbrales:
+  #     HIGH: 0
+  # gitleaks:            # semana 4 · toda contraseña encontrada es SECRETO
+  #   umbrales:
+  #     SECRETO: 0
+  # registros:           # semana 4 · prueba canario: contraseñas en los registros
+  #   umbrales:
+  #     ALTA: 0
+
+# Excepciones (aceptación formal de un riesgo). Todas vencen: obligan a revisarlas.
+excepciones: []
+#  - herramienta: trivy-dependencias
+#    id: CVE-2026-00000
+#    tipo: riesgo_aceptado                # o falso_positivo
+#    ubicacion: "cenfopay:ci"            # opcional: limita la excepción a un objetivo
+#    justificacion: "La función vulnerable no se usa; control compensatorio X (ver informe)."
+#    responsable: "Nombre Apellido"
+#    vence: 2026-12-31

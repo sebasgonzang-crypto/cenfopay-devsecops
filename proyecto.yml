@@ -1,0 +1,12 @@
+# Proyecto CenfoPay · CIB-665 Automatización y DevSecOps
+#
+# ¿En qué semana del proyecto vas? El pipeline (.github/workflows/devsecops.yml)
+# lee este número y enciende las revisiones que corresponden:
+#   0 = proyecto recién creado (todavía no se revisa nada)
+#   1 = pruebas + Semgrep + ZAP + compuerta
+#   2 = + revisión del contenedor (Hadolint, Trivy, SBOM)
+#   3 = + reglas propias, Bandit y pruebas de seguridad
+#   4 = + Gitleaks, contraseñas del environment y prueba canario
+#
+# No lo cambies a mano: usa  bash scripts/semana.sh <número>
+semana: 0
