@@ -45,7 +45,7 @@ herramientas:
     umbrales: {}
   endurecimiento:      # semana 2 · scripts/verificar-endurecimiento.sh
     umbrales:
-      ALTA: 0
+      ALTA: 1
   # bandit:              # semana 3 · HIGH, MEDIUM, LOW
   #   umbrales:
   #     HIGH: 0
@@ -54,7 +54,7 @@ herramientas:
   #     SECRETO: 0
   # registros:           # semana 4 · prueba canario: contraseñas en los registros
   #   umbrales:
-  #     ALTA: 0
+  #     ALTA: 1
 
 # Excepciones (aceptación formal de un riesgo). Todas vencen: obligan a revisarlas.
 excepciones: []
