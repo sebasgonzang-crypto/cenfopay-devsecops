@@ -1,7 +1,7 @@
 # Inventario y clasificación de vulnerabilidades del contenedor · CenfoPay (semana 2)
 
 ## 1. Inventario (SBOM)
-- Archivo: `reportes/sbom-cyclonedx.json`   · Componentes totales: ____
+- Archivo: `reportes/sbom-cyclonedx.json`   · Componentes totales: __512__
 - Imagen base: ________________  · Digest: `sha256:________________`
 - Sistema operativo y versión: __________  · Paquetes del SO: ____  · Librerías Python: ____
 
