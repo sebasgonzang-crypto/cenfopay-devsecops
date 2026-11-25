@@ -22,7 +22,7 @@ modo: bloquear           # cambiado por scripts (ver historial de git)
 herramientas:
   semgrep:               # SAST · gravedades: ERROR, WARNING, INFO
     umbrales:
-      ERROR: 5           # límite de tolerancia: hallazgos ERROR de hoy
+      ERROR: 0           # semana 3: código corregido → el límite de tolerancia baja a 0
   zap:                   # DAST · riesgos: High, Medium, Low, Informational
     umbrales:
       High: 0
@@ -42,13 +42,15 @@ herramientas:
       HIGH: 0
   trivy-dependencias:  # semana 2 = solo reporta · semana 3 = detiene
     solo_con_correccion: true
-    umbrales: {}
+    umbrales:              # semana 3: las librerías se actualizaron → ahora detiene
+      CRITICAL: 0
+      HIGH: 0
   endurecimiento:      # semana 2 · scripts/verificar-endurecimiento.sh
     umbrales:
       ALTA: 1
-  # bandit:              # semana 3 · HIGH, MEDIUM, LOW
-  #   umbrales:
-  #     HIGH: 0
+  bandit:              # semana 3 · HIGH, MEDIUM, LOW
+    umbrales:
+      HIGH: 0
   # gitleaks:            # semana 4 · toda contraseña encontrada es SECRETO
   #   umbrales:
   #     SECRETO: 0
@@ -57,7 +59,16 @@ herramientas:
   #     ALTA: 1
 
 # Excepciones (aceptación formal de un riesgo). Todas vencen: obligan a revisarlas.
-excepciones: []
+excepciones:
+  - herramienta: semgrep
+    id: useless-inner-function
+    tipo: falso_positivo
+    justificacion: >-
+      Las funciones internas de create_app() son páginas de Flask registradas con
+      @app.get/@app.post: el framework sí las usa. La regla no entiende esa forma de
+      registrar páginas. Revisado en la semana 3.
+    responsable: "Equipo CenfoPay"
+    vence: 2027-06-30
 #  - herramienta: trivy-dependencias
 #    id: CVE-2026-00000
 #    tipo: riesgo_aceptado                # o falso_positivo

@@ -23,7 +23,9 @@ def cargar():
         "DB_USER": os.getenv("DB_USER", "cenfopay_app"),
         # VULN (CWE-798): contraseña por defecto embebida.
         "DB_PASSWORD": os.getenv("DB_PASSWORD", "CenfoPay#2026"),
-        "SQLITE_PATH": os.getenv("SQLITE_PATH", "/tmp/cenfopay.db"),
+        # Falso positivo revisado (Bandit B108): SQLite solo se usa en pruebas locales;
+        # en el contenedor DB_ENGINE=postgres y esta ruta nunca se abre.
+        "SQLITE_PATH": os.getenv("SQLITE_PATH", "/tmp/cenfopay.db"),  # nosec B108
         "REPORTES_DIR": os.getenv(
             "REPORTES_DIR",
             os.path.join(os.path.dirname(__file__), "reportes_publicos"),

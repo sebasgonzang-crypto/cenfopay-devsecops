@@ -5,6 +5,8 @@ import datetime
 import logging
 import os
 
+import requests
+
 from flask import render_template_string, request
 from werkzeug.utils import safe_join
 
@@ -76,3 +78,11 @@ API_TOKEN_ENV = "API_TOKEN"
 CLAVE_BD = os.getenv("DB_PASSWORD", "CenfoPay#2026")
 # ok: cenfopay-secreto-embebido
 CLAVE_BD_SEGURA = os.getenv("DB_PASSWORD")
+def tipo_cambio_inseguro():
+    # ruleid: cenfopay-requests-sin-verificacion
+    return requests.get("https://api.ejemplo.test/tipo-cambio", verify=False, timeout=10)
+ 
+ 
+def tipo_cambio_seguro():
+    # ok: cenfopay-requests-sin-verificacion
+    return requests.get("https://api.ejemplo.test/tipo-cambio", timeout=10)
