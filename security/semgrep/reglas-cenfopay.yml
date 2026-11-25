@@ -94,7 +94,6 @@ rules:
           metavariable: $NIVEL
           regex: ^(debug|info|warning|error|critical|exception)$
       - pattern-regex: (?i)\{\s*\w*(password|passwd|secret|token|clave)\w*\s*\}
-
   - id: cenfopay-flask-debug-activo
     languages: [python]
     severity: ERROR
@@ -136,3 +135,16 @@ rules:
           - metavariable-regex:
               metavariable: $VALOR
               regex: ^.{6,}$
+  # Regla agregada en el Laboratorio 3
+  - id: cenfopay-requests-sin-verificacion
+    languages: [python]
+    severity: ERROR
+    message: >-
+      La conexión HTTPS no verifica el certificado del servidor (verify=False).
+      Alguien en medio de la red podría leer o cambiar los datos. Quita verify=False.
+    metadata:
+      cwe: "CWE-295: Improper Certificate Validation"
+      owasp: "A04:2025 - Cryptographic Failures"
+      confidence: HIGH
+      category: security
+    pattern: requests.$METODO(..., verify=False, ...)

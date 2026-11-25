@@ -2,16 +2,16 @@
 
 ## 1. Inventario (SBOM)
 - Archivo: `reportes/sbom-cyclonedx.json`   · Componentes totales: __512__
-- Imagen base: ________________  · Digest: `sha256:________________`
-- Sistema operativo y versión: __________  · Paquetes del SO: ____  · Librerías Python: ____
+- Imagen base: ___debian13.1_____________  · Digest: `sha256:sha256:414fc4229befd1c740922b120b832761a6629d9562a0428a6d94baceaa7247f3
+- Sistema operativo y versión: _debian13.1_________  · Paquetes del SO: ____  · Librerías Python: (wheel 0.45.1____
 
 ## 2. Clasificación (antes / después del endurecimiento)
 | Origen | Severidad | Antes | Después | Con corrección | Sin corrección | En CISA KEV |
 |--------|-----------|------:|--------:|---------------:|---------------:|------------:|
-| SO (trivy-so) | CRITICAL | | | | | |
-| SO (trivy-so) | HIGH | | | | | |
-| Dependencias (trivy-dependencias) | CRITICAL | | | | | |
-| Dependencias (trivy-dependencias) | HIGH | | | | | |
+| SO (trivy-so) | CRITICAL | | | | | |235
+| SO (trivy-so) | HIGH | | | | | |2599
+| Dependencias (trivy-dependencias) | CRITICAL | | | | | | 0
+| Dependencias (trivy-dependencias) | HIGH | | | | | | 16
 | Configuración (trivy-config / hadolint) | ALTA | | | | | |
 
 ## 3. Top 5 para priorizar
